@@ -6,9 +6,10 @@ from utils.utils import *
 from utils.prep_dataset import load_data
 from utils.hyperparameters import ModelHyperparams
 
-# RANDOM_SEEDS = (7, 42, 158, 1293, 8888)
-# RANDOM_SEEDS = (7, 42, 158, 1293)
-RANDOM_SEEDS = [7]
+RANDOM_SEEDS = (7, 42, 158, 1293, 8888)
+
+
+# RANDOM_SEEDS = [7]  # sentence-chunk smoothing exp.
 
 def get_preds_ground_truth(m):
     # read ground truth
@@ -26,9 +27,10 @@ def get_preds_ground_truth(m):
     if m.task == CLF:
         df = df[['manifesto_id', f'{m.eval_target}_label']].rename(
             columns={f'{m.eval_target}_label': f'{m.eval_target}_true{m.model_i}'})
-    else:
+    elif m.task == RGR:
         df = df[['manifesto_id', f'chunk_{m.eval_target}_score']].rename(
             columns={f'chunk_{m.eval_target}_score': f'{m.eval_target}_true{m.model_i}'})
+        # df = df[['manifesto_id']]
 
     for seed in RANDOM_SEEDS:
         # read preds
@@ -49,14 +51,24 @@ def get_preds_ground_truth(m):
 
     # compute manifesto-level scores
     pred_cols = list(df.columns)
-    pred_cols.remove('manifesto_id')
     if m.task == CLF:
+        pred_cols.remove('manifesto_id')
         compute_simple = compute_rile_simple if m.eval_target == RILE \
             else compute_gal_tan_simple
         scores = df.groupby('manifesto_id')[pred_cols].agg(compute_simple).reset_index()
         return df, scores
 
-    scores = df.groupby('manifesto_id')[pred_cols].mean().reset_index()
+    elif m.task == RGR:
+        pred_cols.remove('manifesto_id')
+        pred_cols.remove(f'{m.eval_target}_true{m.model_i}')
+        scores = df.groupby('manifesto_id')[pred_cols].mean().reset_index()
+
+        df_ground_truth = get_manifesto_ground_truth()
+        df_ground_truth = df_ground_truth[['manifesto_id', f'{m.eval_target}_true']].rename(
+            columns={f'{m.eval_target}_true': f'{m.eval_target}_true{m.model_i}'}
+        )
+        scores = pd.merge(scores, df_ground_truth, on='manifesto_id', how='left')
+
     return df, scores
 
 
@@ -95,7 +107,7 @@ def compute_metrics_avg_seed(m, df, scores):
                                            df[f'{m.eval_target}_pred{m.model_i}_{seed}'])
 
             mse_manifesto = mean_squared_error(scores[f'{m.eval_target}_true{m.model_i}'],
-                                     scores[f'{m.eval_target}_pred{m.model_i}_{seed}'])
+                                               scores[f'{m.eval_target}_pred{m.model_i}_{seed}'])
 
             rho = scores[f'{m.eval_target}_true{m.model_i}'].corr(
                 scores[f'{m.eval_target}_pred{m.model_i}_{seed}'],
@@ -143,12 +155,12 @@ if __name__ == "__main__":
         emb_model_name='ModernBERT',
         n_epochs=5,
         lr=1e-5,
-        train_batch_size=4,
-        eval_ep=4,
+        train_batch_size=2,
+        eval_ep=3,
         freeze_enc_weights=False,
         contr_pretr_id=None,
         whiten=None,
-        max_sent=100,
+        max_sent=200,
         max_tokens=None
     )
     print(model)

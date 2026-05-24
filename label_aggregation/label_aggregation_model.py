@@ -10,36 +10,6 @@ from utils.utils import *
 from whiten import compute_kernel_bias, transform_and_normalize
 
 
-class StaticEmbeddingsModel(nn.Module):
-    def __init__(self,
-                 model_name,  # HF model name
-                 freeze_enc_weights,  # set to True to only train clf head(s)
-                 contr_pretr_id,  # contrastive pretraining setup ID
-                 ):
-        super().__init__()
-        model_name_short = get_model_name_short(model_name)
-
-        # load emb from disk
-        emb_dir = f'{mount_no_backup}/emb/whiten/{model_name_short}_cpid{contr_pretr_id}'
-        self.emb = dict()
-        self.emb['train'] = pd.read_csv(f'{emb_dir}/train_emb.csv').to_numpy()
-        self.emb['val'] = pd.read_csv(f'{emb_dir}/val_emb.csv').to_numpy()
-        self.emb['test'] = pd.read_csv(f'{emb_dir}/test_emb.csv').to_numpy()
-        print(f'{self.train_emb.shape=}, {self.val_emb.shape=}, {self.test_emb.shape=}')
-
-        # freeze weights
-        if freeze_enc_weights:
-            for param in self.model.parameters():
-                param.requires_grad = False
-
-    def forward(self, inputs):
-        train_val_test = inputs['train_val_test']
-        idx = inputs['idx']
-        output = self.emb[train_val_test][idx]
-        print(f'{output.shape=}')
-        return output
-
-
 class EmbeddingModel(nn.Module):
     def __init__(self,
                  model_name,  # HF model name
@@ -105,14 +75,13 @@ class EmbeddingModel(nn.Module):
             )
 
     def forward(self, input_ids, attention_mask):
-        # input_ids = inputs['input_ids']
-        # attention_mask = inputs['attention_mask']
         model_output = self.model(input_ids=input_ids, attention_mask=attention_mask)
 
         if 'sentence-transformers' in self.model_name:  # ST
             emb = mean_pooling(model_output, attention_mask)
             # advised by hf but not in Nikolaev et al. code:
             # emb = F.normalize(emb, p=2, dim=1)
+
         else:  # transformer
             # sent emb is last hidden state repr of CLS token
             emb = model_output.last_hidden_state[:, 0, :]
@@ -125,6 +94,8 @@ class EmbeddingModel(nn.Module):
 
     def get_whiten_kernel_bias(self, dataloader, tokenizer, max_length, device):
         print('Computing whitening kernel and bias...')
+
+        # get emb. of train set
         emb = []
         for i, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
             input_ids, attention_mask = unpack_tokenize(batch, tokenizer, device,
@@ -132,15 +103,9 @@ class EmbeddingModel(nn.Module):
             with torch.no_grad():
                 batch_emb = self.forward(input_ids, attention_mask).cpu().numpy()
             emb.append(batch_emb)
-            # if i == 1:  # sanity check
-            #     break
-
-        # > shape (80, 768)
         emb = np.concatenate(emb, axis=0)
 
-        # > shape (80, 768)
-        # emb = torch.cat(emb, dim=0)
-
+        # compute whitening kernel and bias
         kernel, bias = compute_kernel_bias(emb, k=None)
         self.whiten_kernel = torch.tensor(kernel, dtype=torch.float32).to(device)
         self.whiten_bias = torch.tensor(bias, dtype=torch.float32).to(device)
@@ -152,28 +117,11 @@ class ClassificationHead(nn.Module):
         super().__init__()
         self.linear1 = nn.Linear(emb_dim, inner_dim)
         self.linear2 = nn.Linear(inner_dim, n_classes)
-        # self.dropout = nn.Dropout(0.2)
-
-        # self.linear1 = nn.Linear(emb_dim, 256)
-        # self.linear2 = nn.Linear(256, 32)
-        # self.linear3 = nn.Linear(32, n_classes)
 
     def forward(self, emb):
         output = self.linear1(emb)
-
         output = torch.tanh(output)
-        # output = F.leaky_relu(output, negative_slope=0.1)
-
-        # output = self.dropout(output)
-
         output = self.linear2(output)
-
-        # output = self.linear1(emb)
-        # output = torch.tanh(output)
-        # output = self.linear2(output)
-        # output = torch.tanh(output)
-        # output = self.linear3(output)
-
         return output
 
 

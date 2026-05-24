@@ -14,7 +14,6 @@ if __name__ == "__main__":
 
     # data_path = os.path.join(mount, 'marpor_data', 'df_with_rl_gt_categories.csv')
     data_path = os.path.relpath(r'C:\Uni Stuttgart\thesis\joint_rile_galtan\marpor_data\df_with_rl_gt_categories.csv')
-    # print(data_path)
     df = pd.read_csv(data_path)
 
     train_df = df[df['year'] < 2019]

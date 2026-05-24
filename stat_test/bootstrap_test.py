@@ -7,6 +7,7 @@ from stat_test.metrics_avg_seed import *
 
 # bootstrap statistic function
 def rho_diff(sample_index):
+    # example from scipy docs
     # mean1 = np.mean(sample1, axis=axis)
     # mean2 = np.mean(sample2, axis=axis)
     # return mean1 - mean2
@@ -62,12 +63,12 @@ if __name__ == "__main__":
         emb_model_name='ModernBERT',
         n_epochs=5,
         lr=1e-5,
-        train_batch_size=32,
-        eval_ep=1,
+        train_batch_size=2,
+        eval_ep=3,
         freeze_enc_weights=False,
         contr_pretr_id=None,
         whiten=None,
-        max_sent=1,
+        max_sent=200,
         max_tokens=None
     )
 
@@ -96,23 +97,17 @@ if __name__ == "__main__":
         metrics_df.to_csv(metrics_path)
 
     # combine 2 model-specific tables into one
-    # merge_on = ['manifesto_id', f'{m1.eval_target}_true'] \
-    #     if m1.eval_target == m2.eval_target else 'manifesto_id'
-
-    print(f'{m1.scores["manifesto_id"].nunique()=}')
-    print(f'{m2.scores["manifesto_id"].nunique()=}')
+    print(f'Model 1 test set: {m1.scores["manifesto_id"].nunique()} manifestos')
+    print(f'Model 2 test set: {m2.scores["manifesto_id"].nunique()} manifestos')
     manifestos_intersect = list(
         set(list(m1.scores['manifesto_id'].unique())) & \
         set(list(m2.scores['manifesto_id'].unique()))
     )
-    print(f'{len(manifestos_intersect)=}')
-
+    print(f'Intersection: {len(manifestos_intersect)}')
     m1.scores = m1.scores[m1.scores['manifesto_id'].isin(manifestos_intersect)]
     m2.scores = m2.scores[m2.scores['manifesto_id'].isin(manifestos_intersect)]
-
     scores = pd.merge(m1.scores, m2.scores, on='manifesto_id', how='outer')
     print(f'{scores.shape=} {scores.isna().sum().sum()=}')
-    # scores.to_csv('scores.csv')
 
     # run bootstrap test
     res = bootstrap(

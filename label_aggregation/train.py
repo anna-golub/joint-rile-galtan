@@ -13,7 +13,7 @@ from utils.utils import *
 
 from utils.prep_dataset import load_data
 from label_aggregation_model import LabelAggregationModel
-from utils.hyperparameters import get_hyperparameters, read_command_line
+from utils.hyperparameters import read_command_line
 
 
 def get_cross_entropy_loss(logits, labels):
@@ -103,8 +103,6 @@ def do_train():
             batch_loss = batch_train(batch)
             train_loss += batch_loss
             del batch
-            # if i == 1:    # sanity check
-            #     break
 
         train_loss /= len(train_dataloader)
 
@@ -124,8 +122,6 @@ def do_train():
             batch_loss = batch_val(batch)
             val_loss += batch_loss
             del batch
-            # if i == 1:    # sanity check
-            #     break
 
         val_loss /= len(val_dataloader)
 
@@ -169,11 +165,6 @@ if __name__ == "__main__":
     target, emb_model_name, random_seed, n_epochs, lr, \
         train_batch_size, test_batch_size, freeze_enc_weights, \
         contr_pretr_id, whiten = read_command_line(task=CLF, mode='train')
-
-    # target, emb_model_name, contr_pretr_id, whiten, \
-    #     random_seed, n_epochs, lr, with_lr_schedule, \
-    #     train_batch_size, test_batch_size, \
-    #     freeze_enc_weights, _ = get_hyperparameters(task=CLF, mode='train')
 
     device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
     print(f'{device=}')
@@ -245,8 +236,3 @@ if __name__ == "__main__":
 
     # train model
     train_stats = do_train()
-    # try:
-    #     train_stats = do_train()
-    # except torch.OutOfMemoryError:
-    #     debug_memory()
-    # print(torch.cuda.memory_summary(device=None, abbreviated=False))

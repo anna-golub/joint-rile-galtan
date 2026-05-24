@@ -26,12 +26,7 @@ def get_col_names(task):
         return 'chunk_text_translated', 'chunk_rile_score', 'chunk_gal_tan_score'
 
 
-def get_train_val_set(
-        df, task, target,
-        train_batch_size, test_batch_size,
-        random_seed, ddp
-        # tokenizer
-):
+def get_train_val_set(df, task, target, train_batch_size, random_seed):
     # X-TIME train / val set
     # TODO: X-COUNTRY
 
@@ -46,35 +41,22 @@ def get_train_val_set(
         shuffle=True, random_state=random_seed)
 
     print(f'Train: {len(X_train)}')
-    # train_dataset = CMPDataset(X_train, y_train, axis=axis, tokenizer=tokenizer)
     train_dataset = CMPDataset(X_train, y_train, task=task, target=target)
 
     print(f'Val: {len(X_val)}')
-    # val_dataset = CMPDataset(X_val, y_val, axis=axis, tokenizer=tokenizer)
     val_dataset = CMPDataset(X_val, y_val, task=task, target=target)
 
-    if ddp:
-        train_dataloader = DataLoader(train_dataset,
-                                      batch_size=test_batch_size,
-                                      sampler=DistributedSampler(train_dataset))
-        val_dataloader = DataLoader(val_dataset,
-                                    batch_size=train_batch_size,
-                                    sampler=DistributedSampler(val_dataset))
-    else:
-        train_dataloader = DataLoader(train_dataset,
-                                      batch_size=train_batch_size,
-                                      shuffle=True)
-        val_dataloader = DataLoader(val_dataset,
-                                    batch_size=train_batch_size,
-                                    shuffle=False)
+    train_dataloader = DataLoader(train_dataset,
+                                  batch_size=train_batch_size,
+                                  shuffle=True)
+    val_dataloader = DataLoader(val_dataset,
+                                batch_size=train_batch_size,
+                                shuffle=False)
 
     return train_dataloader, val_dataloader
 
 
-def get_test_set(
-        df, task, target, test_batch_size, ddp
-        # tokenizer
-):
+def get_test_set(df, task, target, test_batch_size):
     # X-TIME test set
     # TODO: X-COUNTRY
 
@@ -84,18 +66,10 @@ def get_test_set(
     y_test = test_df[[rile_col, gal_tan_col]]
 
     print(f'Test: {len(X_test)}')
-    # test_dataset = CMPDataset(X_test, y_test, axis=axis, tokenizer=tokenizer)
     test_dataset = CMPDataset(X_test, y_test, task=task, target=target)
-
-    if ddp:
-        test_dataloader = DataLoader(test_dataset,
-                                     batch_size=test_batch_size,
-                                     sampler=DistributedSampler(test_dataset))
-    else:
-        test_dataloader = DataLoader(test_dataset,
-                                     batch_size=test_batch_size,
-                                     shuffle=False)
-
+    test_dataloader = DataLoader(test_dataset,
+                                 batch_size=test_batch_size,
+                                 shuffle=False)
     return test_df, test_dataloader
 
 
@@ -103,14 +77,12 @@ def load_data(
         task,
         target, train_or_test, mount, test_batch_size,
         train_batch_size=None, random_seed=None,
-        emb_model_name=None, ddp=False,
+        emb_model_name=None,
         max_tokens=None, max_sent=None
-        # tokenizer
 ):
     # read data from disk
     print('Reading data...')
     data_filename = get_data_filename(task, emb_model_name, max_tokens, max_sent)
-    # print(data_filename)
     data_path = os.path.join(mount, 'marpor_data', data_filename)
     # data_path = os.path.relpath(r'C:\Uni Stuttgart\thesis\joint_rile_galtan\marpor_data\df_with_rl_gt_categories.csv')
     df = pd.read_csv(data_path)
@@ -125,14 +97,9 @@ def load_data(
 
     # get datasets & dataloaders
     if train_or_test == 'train':
-        return get_train_val_set(
-            df, task, target, train_batch_size, test_batch_size, random_seed, ddp,
-            # tokenizer
-        )
+        return get_train_val_set(df, task, target, train_batch_size, random_seed)
     elif train_or_test == 'test':
-        return get_test_set(df, task, target, test_batch_size, ddp,
-                            # tokenizer
-                            )
+        return get_test_set(df, task, target, test_batch_size)
 
 
 def get_datasets_st(label_basis, random_seed):

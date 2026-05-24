@@ -55,14 +55,6 @@ def label_num2str(label, target):
 
 
 def unpack_tokenize(batch, tokenizer, device, max_length=None):
-    # if static_emb:
-    #     inputs = {'idx': torch.tensor(batch['idx']).to(device),
-    #               'train_val_test': train_val_test}
-    #     print(f'{inputs=}')
-    # else:
-    # input_ids = batch['input_ids'].to(device)
-    # attention_mask = batch['attention_mask'].to(device)
-
     if max_length:  # pad to max_length
         tokenized = tokenizer(
             batch['texts'],
@@ -77,10 +69,6 @@ def unpack_tokenize(batch, tokenizer, device, max_length=None):
             truncation=True,
             return_tensors='pt'
         )
-
-    # inputs = {'input_ids': tokenized['input_ids'].to(device),
-    #               'attention_mask': tokenized['attention_mask'].to(device)}
-
     input_ids = tokenized['input_ids'].to(device)
     attention_mask = tokenized['attention_mask'].to(device)
     del tokenized
@@ -122,6 +110,31 @@ def get_metric_trackers(target, device):  # for label aggr.
         val_acc, val_weighted_f1, val_macro_f1
 
 
+def get_manifesto_ground_truth(mount=mount_no_backup):
+    try:  # load from disk
+        grt_filename = 'df_ground_truth.csv'
+        grt_path = os.path.join(mount, 'marpor_data', grt_filename)
+        df = pd.read_csv(grt_path)
+        return df
+
+    except FileNotFoundError:  # generate file and save to disk
+        data_filename = 'df_with_rl_gt_categories.csv'
+        data_path = os.path.join(mount, 'marpor_data', data_filename)
+        df = pd.read_csv(data_path)
+
+        df_rile = df.groupby('manifesto_id')['rile_label'].apply(
+            compute_rile_simple).reset_index(name='rile_true')
+        df_galtan = df.groupby('manifesto_id')['gal_tan_label'].apply(
+            compute_gal_tan_simple).reset_index(name='gal_tan_true')
+        df = pd.merge(df_rile, df_galtan, on='manifesto_id', how='outer')
+
+        grt_filename = 'df_ground_truth.csv'
+        grt_path = os.path.join(mount, 'marpor_data', grt_filename)
+        df.to_csv(grt_path, index=False)
+
+        return df
+
+
 def compute_spearman_rho(test_df, task, target):
     if task == CLF:
         if target == RILE:
@@ -135,17 +148,16 @@ def compute_spearman_rho(test_df, task, target):
             compute_simple).reset_index(name='scores_pred')
 
     elif task == RGR:
-        # print(f'{test_df.columns=}')
-        df_scores_true = test_df.groupby('manifesto_id')[
-            f'chunk_{target}_score'].mean().reset_index(name='scores_true')
+        df_scores_true = get_manifesto_ground_truth()[[
+            'manifesto_id', f'{target}_true']].rename(columns={f'{target}_true': 'scores_true'})
         df_scores_pred = test_df.groupby('manifesto_id')[
             f'chunk_{target}_pred'].mean().reset_index(name='scores_pred')
 
     df_scores = pd.merge(
-        df_scores_true,
         df_scores_pred,
+        df_scores_true,
         on='manifesto_id',
-        how='outer')
+        how='left')
 
     rho = df_scores[f'scores_true'].corr(df_scores[f'scores_pred'], method='spearman')
     return rho
@@ -273,9 +285,6 @@ def print_ep_stats(train_stats: dict, ep, target):
         # target-specific values
         for i, t in enumerate([RILE, GALTAN]):
             print(t.upper())
-            # print(f"Val acc = {train_stats[ep]['val_acc'][i]:.3f}")
-            # print(f"Val weighted f1 = {train_stats[ep]['val_weighted_f1'][i]:.3f}")
-            # print(f"Val macro f1 = {train_stats[ep]['val_macro_f1'][i]:.3f}")
             for metric in train_stats[ep]:
                 if 'loss' in metric:
                     continue
@@ -283,9 +292,6 @@ def print_ep_stats(train_stats: dict, ep, target):
                 print(f"{metric_str} = {train_stats[ep][metric][i]:.3f}")
             print()
     else:
-        # print(f"Val acc = {train_stats[ep]['val_acc']:.3f}")
-        # print(f"Val weighted f1 = {train_stats[ep]['val_weighted_f1']:.3f}")
-        # print(f"Val macro f1 = {train_stats[ep]['val_macro_f1']:.3f}")
         for metric in train_stats[ep]:
             metric_str = metric.capitalize().replace('_', ' ')
             print(f"{metric_str} = {train_stats[ep][metric]:.3f}")
@@ -295,31 +301,10 @@ def print_ep_stats(train_stats: dict, ep, target):
 def postprocess_joint_train_stats(train_stats: pd.DataFrame):
     orig_cols = [col for col in list(train_stats.columns) if 'loss' not in col]
     for i, t in enumerate([RILE, GALTAN]):
-        # train_stats[f'train_acc_{t}'] = train_stats['train_acc'].apply(lambda x: x[i])
-        # train_stats[f'train_weighted_f1_{t}'] = train_stats['train_weighted_f1'].apply(lambda x: x[i])
-        # train_stats[f'train_macro_f1_{t}'] = train_stats['train_macro_f1'].apply(lambda x: x[i])
-        # train_stats[f'val_acc_{t}'] = train_stats['val_acc'].apply(lambda x: x[i])
-        # train_stats[f'val_weighted_f1_{t}'] = train_stats['val_weighted_f1'].apply(lambda x: x[i])
-        # train_stats[f'val_macro_f1_{t}'] = train_stats['val_macro_f1'].apply(lambda x: x[i])
-
         for col in orig_cols:
             train_stats[f'{col}_{t}'] = train_stats[col].apply(lambda x: x[i])
 
-    # train_stats = train_stats.drop([
-    #     'train_acc', 'train_weighted_f1', 'train_macro_f1',
-    #     'val_acc', 'val_weighted_f1', 'val_macro_f1'
-    # ], axis=1)
     train_stats = train_stats.drop(orig_cols, axis=1)
-
-    # train_stats = train_stats[[
-    #     'train_loss',
-    #     'train_acc_rile', 'train_weighted_f1_rile', 'train_macro_f1_rile',
-    #     'train_acc_gal_tan', 'train_weighted_f1_gal_tan', 'train_macro_f1_gal_tan',
-    #     'val_loss',
-    #     'val_acc_rile', 'val_weighted_f1_rile', 'val_macro_f1_rile',
-    #     'val_acc_gal_tan', 'val_weighted_f1_gal_tan', 'val_macro_f1_gal_tan',
-    # ]]
-
     train_stats = train_stats[
         ['train_loss'] + \
         [f'{col}_rile' for col in orig_cols if 'train' in col] + \
@@ -328,7 +313,6 @@ def postprocess_joint_train_stats(train_stats: pd.DataFrame):
         [f'{col}_rile' for col in orig_cols if 'val' in col] + \
         [f'{col}_gal_tan' for col in orig_cols if 'val' in col]
         ]
-
     return train_stats
 
 
@@ -345,29 +329,3 @@ def debug_memory():
     )
     for line in sorted(tensors.items()):
         print('{}\t{}'.format(*line))
-
-# import gc
-# from pynvml import nvmlInit, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo
-# import time
-#
-#
-# def clear_gpu_memory():
-#     torch.cuda.empty_cache()
-#     gc.collect()
-#     # del variables
-#
-#
-# def wait_until_enough_gpu_memory(min_memory_available, max_retries=10, sleep_time=5):
-#     nvmlInit()
-#     handle = nvmlDeviceGetHandleByIndex(torch.cuda.current_device())
-#
-#     for _ in range(max_retries):
-#         info = nvmlDeviceGetMemoryInfo(handle)
-#         if info.free >= min_memory_available:
-#             print(f'{info.free=}')
-#             break
-#         print(f"Waiting for {min_memory_available} bytes of free GPU memory. Retrying in {sleep_time} seconds...")
-#         time.sleep(sleep_time)
-#     else:
-#         raise RuntimeError(
-#             f"Failed to acquire {min_memory_available} bytes of free GPU memory after {max_retries} retries.")

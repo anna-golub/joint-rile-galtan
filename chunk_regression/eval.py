@@ -5,7 +5,6 @@ from tqdm import tqdm
 import sys
 
 sys.path.append('..')  # allows imports from parent / sibling directory
-from utils.utils import *
 from utils.hyperparameters import *
 from utils.prep_dataset import load_data
 from regression_model import RegressionModel
@@ -35,8 +34,6 @@ def do_test():
         batch_pred = batch_test(batch)
         y_pred.append(batch_pred)
         del batch
-        # if i == 1:  # sanity check
-        #     break
 
     y_pred = np.concatenate(y_pred, axis=0)
     y_pred = pd.DataFrame(y_pred)
@@ -71,26 +68,17 @@ def eval_preds():
         print(f"Spearman's rho (manifesto level): {rho:.3f}")
         print()
 
-    if target == JOINT:
-        rho_avg = (results[RILE]['rho'] + results[GALTAN]['rho']) / 2
-        results[JOINT] = {'rho': rho_avg}
-        print(f"Average rho: {rho_avg:.3f}")
-
     return results
 
 
 if __name__ == "__main__":
     print('Chunk-level regression: eval')
+    # context window: BigBird - 4096, ModernBERT - 8192
 
     task = RGR
     target, emb_model_name, random_seed, n_epochs, lr, \
         train_batch_size, test_batch_size, freeze_enc_weights, \
         max_tokens, max_sent, ep = read_command_line(task=RGR, mode='eval')
-
-    # target, emb_model_name, max_tokens, max_sent, \
-    #     random_seed, n_epochs, lr, with_lr_schedule, \
-    #     train_batch_size, test_batch_size, freeze_enc_weights, \
-    #     dropout_p, ep = get_hyperparameters(task=RGR, mode='eval')
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f'{device=}')
@@ -99,8 +87,6 @@ if __name__ == "__main__":
     # load tokenizer
     print('Loading tokenizer...')
     tokenizer = AutoTokenizer.from_pretrained(emb_model_name)
-    # context window: BigBird - 4096, ModernBERT - 8192
-    # max_length = 4096 if 'bigbird' in emb_model_name else 8192
 
     # load data
     test_df, test_dataloader = load_data(
@@ -112,7 +98,6 @@ if __name__ == "__main__":
         emb_model_name=emb_model_name,
         max_tokens=max_tokens,
         max_sent=max_sent,
-        # tokenizer=tokenizer
     )
 
     # load model
@@ -133,8 +118,7 @@ if __name__ == "__main__":
     model.to(device)
 
     # if model was trained with DP
-    # if 'bigbird' in emb_model_name:
-    #     model = DataParallel(model, device_ids=[0, 1, 2, 3])
+    # model = DataParallel(model, device_ids=[0, 1, 2, 3])
 
     checkpoint = torch.load(checkpoint, weights_only=True, map_location=device)
     model.load_state_dict(checkpoint)
@@ -146,10 +130,9 @@ if __name__ == "__main__":
     y_pred = do_test()
 
     # or load predictions from disk
-    # preds_path = get_preds_path(task, target,
-    #                             emb_model_name, freeze_enc_weights,
-    #                             lr, train_batch_size, with_lr_schedule, ep,
-    #                             dropout_p=dropout_p, max_sent=max_sent)
+    # preds_path = get_preds_path(task, target, random_seed,
+    #                emb_model_name, freeze_enc_weights,
+    #                lr, train_batch_size, ep, max_sent=max_sent)
     # y_pred = pd.read_csv(preds_path, index_col=0)
 
     # get test set metrics

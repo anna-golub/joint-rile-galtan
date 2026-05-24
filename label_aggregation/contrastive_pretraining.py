@@ -1,7 +1,3 @@
-import os
-
-# os.environ["CUDA_VISIBLE_DEVICES"] = '2,3,4,5'
-
 from sentence_transformers import SentenceTransformer, SentenceTransformerTrainer, \
     SentenceTransformerTrainingArguments
 from sentence_transformers.losses import BatchAllTripletLoss
@@ -9,7 +5,6 @@ from sentence_transformers.losses import BatchAllTripletLoss
 import sys
 
 sys.path.append('..')  # allows imports from parent / sibling directory
-from utils.utils import *
 from utils.prep_dataset import get_datasets_st
 from utils.hyperparameters import *
 
@@ -19,10 +14,6 @@ if __name__ == "__main__":
     emb_model_name, random_seed, n_epochs, lr, train_batch_size, test_batch_size, \
         contr_pretr_id, label_basis, margin, \
         lr_scheduler, warmup_steps = read_command_line(task=CONTR, mode='train')
-
-    # contr_pretr_id, emb_model_name, label_basis, margin, random_seed, \
-    #     n_epochs, lr, lr_scheduler_type, warmup_steps, \
-    #     train_batch_size, test_batch_size = get_hyperparameters(task=CONTR)
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f'{device=}')
@@ -61,12 +52,8 @@ if __name__ == "__main__":
         fp16=True,
 
         eval_strategy="epoch",
-        # eval_steps=100,
         save_strategy="epoch",
-        # save_steps=100,
-        # save_total_limit=2,
         logging_strategy='epoch',
-        # logging_steps=100,
     )
 
     # train
@@ -78,7 +65,6 @@ if __name__ == "__main__":
         loss=loss,
     )
     trainer_output = trainer.train()
-    # print(f'{trainer_output=}')
 
     # save model
     print('Saving model...')

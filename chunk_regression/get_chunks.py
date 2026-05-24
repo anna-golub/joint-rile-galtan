@@ -154,7 +154,6 @@ if __name__ == "__main__":
     for i, mid in tqdm(enumerate(df['manifesto_id'].unique()), total=df['manifesto_id'].nunique()):
         mid_chunks_df = get_chunks(mid_df=df[df['manifesto_id'] == mid])
         mid_chunks_df['manifesto_id'] = mid
-        # print(f'{mid_chunks_df.shape=}')
         chunks_df.append(mid_chunks_df)
 
         # if i == 1:  # sanity check

@@ -1,11 +1,7 @@
-# import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = '0,1,2,3'
-
 from sentence_transformers import SentenceTransformer
 from torch.utils.data import DataLoader
 from sklearn.metrics.pairwise import euclidean_distances, cosine_similarity
 from tqdm import tqdm
-import time
 
 import sys
 

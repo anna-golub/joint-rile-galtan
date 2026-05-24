@@ -46,11 +46,6 @@ if __name__ == "__main__":
         test_batch_size=256,
         random_seed=random_seed)
 
-    # Respond
-    # concisely
-    # with one label only!!! Do not include anything else in your reply!!!
-    # and on the concepts listed above
-
     # Below is a
     # list
     # of
@@ -108,16 +103,6 @@ if __name__ == "__main__":
     #     State
     #     Expansion
 
-    # prompt = """Here is an excerpt from a manifesto of a political party:
-    # "{sent}"
-    #
-    # Based on this excerpt and the concepts listed above, what label best reflects the position of this party on the right-left political spectrum?
-    # A. Right
-    # B. Left
-    # C. Neutral
-    # Respond concisely with one label only!!! Do not include anything else in your reply!!!
-    # """
-
     if target == RILE:
         prompt = """Question: What political position is expressed in this statement?
         Statement: {sent}
@@ -155,32 +140,9 @@ if __name__ == "__main__":
     # Correct option:
     # """
 
-    # sent = 'After Maydan 2014, popularism became a state ideology, with disastrous consequences.'
-    # sent = 'The war in the east of the country,'
-    # input_text = prompt.format(sent=sent)
-    # # print(input_text)
-    #
-    # input_ids = tokenizer(input_text, return_tensors="pt",
-    #                       return_token_type_ids=False).to(device)
-    #
-    # output = model.generate(**input_ids, max_new_tokens=10,
-    #                         temperature=1.0,
-    #                         # do_sample=True,
-    #                         # top_k=0, top_p=0.7,
-    #                         # cache_implementation="static"
-    #                         )
-    # response = tokenizer.decode(output[0], skip_special_tokens=True)
-    # print(response)
-
     # run test
     responses = []
-    # for _, row in tqdm(test_df.iterrows(), total=test_df.shape[0]):
-    # for _, row in test_df.iterrows():
     for batch in tqdm(test_dataloader, total=len(test_dataloader)):
-        #     sent = row['text_translated']
-        # print(sent)
-        # input_text = prompt.format(sent=sent)
-
         input_text = [prompt.format(sent=sent) for sent in batch['texts']]
 
         input_ids = tokenizer(input_text,
@@ -197,11 +159,6 @@ if __name__ == "__main__":
                                 # num_return_sequences=30,
                                 pad_token_id=tokenizer.eos_token_id  # otherwise gives a warning
                                 )
-        # resp = tokenizer.decode(output[0], skip_special_tokens=True)
-        # resp = resp[len(input_text):].replace('\n', ' ')
-        # # print(resp)
-        # responses.append(resp)
-        # # print()
 
         batch_resp = tokenizer.batch_decode(output, skip_special_tokens=True)
 
@@ -209,7 +166,6 @@ if __name__ == "__main__":
 
         batch_resp = [batch_resp[i][len(input_text[i]):].replace('\n', ' ')
                       for i in range(len(batch_resp))]
-        # print(batch_resp)
         responses.extend(batch_resp)
 
         del input_ids, output, batch_resp

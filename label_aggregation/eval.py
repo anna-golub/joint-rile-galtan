@@ -6,7 +6,6 @@ from tqdm import tqdm
 import sys
 
 sys.path.append('..')  # allows imports from parent / sibling directory
-from utils.utils import *
 
 from utils.prep_dataset import load_data
 from label_aggregation_model import LabelAggregationModel
@@ -107,11 +106,6 @@ if __name__ == "__main__":
         train_batch_size, test_batch_size, freeze_enc_weights, \
         contr_pretr_id, whiten, ep = read_command_line(task=CLF, mode='eval')
 
-    # target, emb_model_name, contr_pretr_id, whiten, \
-    #     random_seed, n_epochs, lr, with_lr_schedule, \
-    #     train_batch_size, test_batch_size, freeze_enc_weights, \
-    #     ep = get_hyperparameters(task=CLF, mode='eval')
-
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f'{device=}')
     set_random_seed(random_seed=random_seed)
@@ -128,7 +122,6 @@ if __name__ == "__main__":
         train_or_test='test',
         mount=mount_no_backup,
         test_batch_size=test_batch_size,
-        # tokenizer=tokenizer
     )
 
     # load model

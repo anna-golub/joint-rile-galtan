@@ -12,7 +12,7 @@ import sys
 
 sys.path.append('..')  # allows imports from parent / sibling directory
 from utils.utils import *
-from utils.hyperparameters import *
+from utils.hyperparameters import read_command_line
 from utils.prep_dataset import load_data
 from regression_model import RegressionModel
 
@@ -27,9 +27,6 @@ def get_mse_loss(pred_scores, ground_truth):
 
 
 def batch_train(batch):
-    # print('START of batch_train')
-    # debug_memory()
-
     input_ids, attention_mask = unpack_tokenize(batch, tokenizer, device,
                                                 max_length=max_tokens)
     ground_truth = batch['ground_truth'].to(device)
@@ -38,7 +35,6 @@ def batch_train(batch):
 
     pred_scores = model(input_ids, attention_mask)
     # remove extra nesting e.g. for target=JOINT: (batch size, 2, 1) => (batch size, 2)
-    # print(f'{pred_scores.shape=}')
     pred_scores = torch.squeeze(pred_scores, dim=-1)
 
     loss = get_mse_loss(pred_scores, ground_truth)
@@ -60,9 +56,6 @@ def batch_train(batch):
     optimizer.zero_grad(set_to_none=True)
     torch.cuda.empty_cache()
     gc.collect()
-
-    # print('END of batch_train')
-    # debug_memory()
 
     return loss_item
 
@@ -115,13 +108,6 @@ def do_train():
             batch_loss = batch_train(batch)
             train_loss += batch_loss
             del batch
-            # if i == 1:    # sanity check
-            #     break
-            # print(f'{i=}: done')
-
-            # min_memory_available = 2 * 1024 * 1024 * 1024  # 2GB
-            # clear_gpu_memory()
-            # wait_until_enough_gpu_memory(min_memory_available)
 
         train_loss /= len(train_dataloader)
 
@@ -139,8 +125,6 @@ def do_train():
             batch_loss = batch_val(batch)
             val_loss += batch_loss
             del batch
-            # if i == 1:    # sanity check
-            #     break
 
         val_loss /= len(val_dataloader)
 
@@ -174,16 +158,12 @@ def do_train():
 
 if __name__ == "__main__":
     print('Chunk-level regression: train')
+    # context window: BigBird - 4096, ModernBERT - 8192
 
     task = RGR
     target, emb_model_name, random_seed, n_epochs, lr, \
         train_batch_size, test_batch_size, freeze_enc_weights, \
         max_tokens, max_sent = read_command_line(task=RGR, mode='train')
-
-    # target, emb_model_name, max_tokens, max_sent, \
-    #     random_seed, n_epochs, lr, with_lr_schedule, \
-    #     train_batch_size, test_batch_size, freeze_enc_weights, \
-    #     dropout_p, _ = get_hyperparameters(task=task, mode='train')
 
     device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
     print(f'{device=}')
@@ -192,9 +172,6 @@ if __name__ == "__main__":
     # load tokenizer
     print('Loading tokenizer...')
     tokenizer = AutoTokenizer.from_pretrained(emb_model_name)
-
-    # context window: BigBird - 4096, ModernBERT - 8192
-    # max_length = 4096 if 'bigbird' in emb_model_name else 8192
 
     # load train & val data
     train_dataloader, val_dataloader = load_data(
@@ -208,7 +185,6 @@ if __name__ == "__main__":
         emb_model_name=emb_model_name,
         max_tokens=max_tokens,
         max_sent=max_sent,
-        # tokenizer=tokenizer,
     )
 
     # load model
@@ -220,10 +196,9 @@ if __name__ == "__main__":
         # dropout_p=dropout_p,
         emb_dim=768,
     )
-    # print(model)
     model.to(device)
 
-    # ModernBERT is trained on nandu w/o DP
+    # ModernBERT is trained w/o DP
     # if 'bigbird' in emb_model_name:
     #     model = DataParallel(model, device_ids=[0, 1, 2, 3])
     #     model.to(device)
@@ -260,11 +235,8 @@ if __name__ == "__main__":
     print()
 
     # train model
-    # train_stats = do_train()
-
     try:
         train_stats = do_train()
     except torch.OutOfMemoryError:
         print('OutOfMemoryError')
         debug_memory()
-    # print(torch.cuda.memory_summary(device=None, abbreviated=False))

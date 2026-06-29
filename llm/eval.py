@@ -1,180 +1,127 @@
-import os
-
-os.environ['HF_HOME'] = f'/mount/arbeitsdaten/tcl/tclext/golubaa/thesis/.cache'
-
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from tqdm import tqdm
+import re
+from sklearn.metrics import accuracy_score, f1_score
 import sys
 
 sys.path.append('..')  # allows imports from parent / sibling directory
 from utils.utils import *
 from utils.prep_dataset import load_data
+from lookup import str2label
+
+
+def post_process_joint(s):
+    s = s.lstrip().rstrip()
+    if len(s) <= 1:
+        return None, None
+
+    label_rile, label_galtan = None, None
+
+    for v1 in ('right', 'right-wing', 'left', 'left-wing', 'neutral', 'A', 'B', 'C'):
+        for v2 in ('traditional-authoritarian-nationalist', 'traditional', \
+                   'authoritarian', 'nationalist',
+                   'green-alternative-liberal', 'green', 'alternative', 'liberal',
+                   'neutral', 'D', 'E', 'F'):
+            pattern = f'({v1}|{v1.capitalize()})' + r'(.|\n)*' + f'({v2}|{v2.capitalize()})'
+            if re.search(pattern, s):
+                label_rile = v1
+                label_galtan = v2
+
+    return label_rile, label_galtan
+
 
 if __name__ == "__main__":
-    target = GALTAN
-    model_name = 'allenai/Olmo-3-7B-Think'
     task = CLF
+    target = GALTAN
+    model_name = 'allenai/Olmo-3-7B-Instruct'
     random_seed = 7
-
-    device = 'cuda:2' if torch.cuda.is_available() else 'cpu'
-    set_random_seed(random_seed=random_seed)
-
-    # load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-    # load model
-    quantization_config = BitsAndBytesConfig(  # to decrease memory consumption
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4"
-    )
-
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        dtype=torch.bfloat16,
-        attn_implementation="sdpa",
-        quantization_config=quantization_config
-    ).to(device)
+    temperature = 0.85  # default 0.6
+    top_p = 0.85  # default 0.95
+    max_new_tokens = 30
+    num_return_sequences = 5
 
     # read data
-    test_df, test_dataloader = load_data(
+    test_df, _ = load_data(
         task=task,
         target=target,
         train_or_test='test',
         mount=mount_no_backup,
-        test_batch_size=256,
+        test_batch_size=16,
         random_seed=random_seed)
 
-    # Below is a
-    # list
-    # of
-    # concepts
-    # associated
-    # with the right-wing and left-wing political views:
-    #
-    #     RIGHT - WING:
-    #     Civic
-    #     Mindedness: Positive
-    #     Constitutionalism: Positive
-    #     Economic
-    #     Incentives
-    #     Economic
-    #     Orthodoxy
-    #     Free
-    #     Market
-    #     Economy
-    #     Freedom and Human
-    #     Rights
-    #     Law and Order: Positive
-    #     Military: Positive
-    #     National
-    #     Way
-    #     of
-    #     Life: Positive
-    #     Political
-    #     Authority
-    #     Protectionism: Negative
-    #     Traditional
-    #     Morality: Positive
-    #     Welfare
-    #     State
-    #     Limitation
-    #
-    #     LEFT - WING:
-    #     Anti - imperialism
-    #     Controlled
-    #     Economy
-    #     Democracy
-    #     Economic
-    #     Planning
-    #     Education
-    #     Expansion
-    #     Internationalism: Positive
-    #     Labour
-    #     Groups: Positive
-    #     Market
-    #     Regulation
-    #     Military: Negative
-    #     Nationalisation
-    #     Peace
-    #     Protectionism: Positive
-    #     Welfare
-    #     State
-    #     Expansion
+    # read predictions
+    preds_path = get_preds_path_llm(task, target, model_name,
+                                    temperature, top_p, max_new_tokens, num_return_sequences)
+    preds = pd.read_csv(preds_path, index_col=0).rename(
+        columns={'0': 'sent', '1': f'{target}_llm_output'})
+    preds['sent_id'] = np.array([[i] * num_return_sequences
+                                 for i in range(test_df.shape[0])]).flatten()
 
-    if target == RILE:
-        prompt = """Question: What political position is expressed in this statement?
-        Statement: {sent}
-        Option A: Right-wing
-        Option B: Left-wing
-        Option C: Centrist
-        Respond concisely with one label only! Do not include anything else in your reply!
-        Correct option:
-        """
+    # keep only new tokens
+    split_str = 'Correct options:\nassistant\n' if target == JOINT \
+        else 'Correct option:\nassistant\n'
+    preds[f'{target}_llm_output'] = preds[f'{target}_llm_output'].apply(
+        lambda x: x.split(split_str)[1].lstrip().rstrip()
+    )
 
-    elif target == GALTAN:
-        prompt = """Question: What political position is expressed in this statement?
-        Statement: {sent}
-        Option A: Green-Alternative-Liberal
-        Option B: Traditional-Authoritarian-Nationalist
-        Option C: Neutral
-        Respond concisely with one label only! Do not include anything else in your reply!
-        Correct option:
-        """
+    # extract RILE and GAL-TAN categories
+    if target == JOINT:
+        preds['joint_pred'] = preds[f'{target}_llm_output'].apply(post_process_joint)
+        preds['rile_pred'] = preds['joint_pred'].apply(lambda x: x[0]).map(str2label[target])
+        preds['gal_tan_pred'] = preds['joint_pred'].apply(lambda x: x[1]).map(str2label[target])
+        target_arr = [RILE, GALTAN]
+    else:
+        preds[f'{target}_pred'] = preds[f'{target}_llm_output'].map(str2label[target])
+        target_arr = [target]
 
-    # prompt = """The following is a multiple choice question (with an answer) about political science:
-    # Question: What political position is expressed in this statement?
-    # Statement: "At this difficult time in Ukraine, it was time for a change."
-    # A. Right-wing
-    # B. Left-wing
-    # C. Centrist
-    # Correct option: C
-    #
-    # Question: What political position is expressed in this statement?
-    # Statement: "{sent}"
-    # A. Right-wing
-    # B. Left-wing
-    # C. Centrist
-    # Respond concisely with one label only!!! Do NOT include anything else in your reply!!!
-    # Correct option:
-    # """
+    for t in target_arr:
+        print(t)
+        print(preds[f'{t}_pred'].value_counts(dropna=False))
+        print()
 
-    # run test
-    responses = []
-    for batch in tqdm(test_dataloader, total=len(test_dataloader)):
-        input_text = [prompt.format(sent=sent) for sent in batch['texts']]
+    # process multiple responses per sentence
+    if target == JOINT:
+        preds = preds.groupby(['sent_id', 'sent'])[
+            ['rile_pred', 'gal_tan_pred']].aggregate(lambda x: x).reset_index()
+        preds[[f'rile_pred{i}' for i in range(num_return_sequences)]] = pd.DataFrame(
+            preds['rile_pred'].tolist())
+        preds[[f'gal_tan_pred{i}' for i in range(num_return_sequences)]] = pd.DataFrame(
+            preds['gal_tan_pred'].tolist())
+        preds = preds.rename(columns={'rile_pred': 'rile_pred_arr',
+                                      'gal_tan_pred': 'gal_tan_pred_arr'})
+    else:
+        preds = preds.groupby(['sent_id', 'sent'])[
+            f'{target}_pred'].aggregate(lambda x: x).reset_index()
+        preds[[f'{target}_pred{i}' for i in range(num_return_sequences)]] = pd.DataFrame(
+            preds[f'{target}_pred'].tolist())
+        preds = preds.rename(columns={f'{target}_pred': f'{target}_pred_arr'})
 
-        input_ids = tokenizer(input_text,
-                              max_length=100, padding='max_length',
-                              truncation=True,
-                              return_tensors="pt",
-                              return_token_type_ids=False).to(device)
+    # calculate variance of responses
+    for t in target_arr:
+        preds[f'{t}_pred_variance'] = preds[f'{t}_pred_arr'].apply(lambda x: len(set(x)))
+        print(t)
+        print(preds[f'{t}_pred_variance'].value_counts(normalize=True))
+        print()
 
-        output = model.generate(**input_ids,
-                                do_sample=True,
-                                temperature=0.7,
-                                top_p=0.85,
-                                max_new_tokens=30,
-                                # num_return_sequences=30,
-                                pad_token_id=tokenizer.eos_token_id  # otherwise gives a warning
-                                )
+    # compute metrics
+    metrics_df = {i: {} for i in range(num_return_sequences)}
+    for t in target_arr:
+        for i in range(num_return_sequences):
+            test_df[f'{t}_pred'] = preds[f'{t}_pred{i}'].to_list()
+            test_df_i = test_df[~test_df[f'{t}_pred'].isna()]
+            metrics_df[i].update({
+                f'{t}_test_examples': test_df_i.shape[0] / test_df.shape[0],
+                f'{t}_acc': accuracy_score(test_df_i[f'{t}_label'], test_df_i[f'{t}_pred']),
+                f'{t}_weighted_f1': f1_score(test_df_i[f'{t}_label'], test_df_i[f'{t}_pred'],
+                                             average='weighted'),
+                f'{t}_macro_f1': f1_score(test_df_i[f'{t}_label'], test_df_i[f'{t}_pred'],
+                                          average='macro'),
+                f'{t}_rho': compute_spearman_rho(test_df_i, task=task, target=t)
+            })
 
-        batch_resp = tokenizer.batch_decode(output, skip_special_tokens=True)
+    metrics_df = pd.DataFrame.from_dict(metrics_df, orient='index')
+    metrics_df.loc['mean'] = metrics_df.mean()
+    print(metrics_df)
 
-        # TODO: save multiple responses per data point
-
-        batch_resp = [batch_resp[i][len(input_text[i]):].replace('\n', ' ')
-                      for i in range(len(batch_resp))]
-        responses.extend(batch_resp)
-
-        del input_ids, output, batch_resp
-
-    # get preds path
-    preds_dir = os.path.join(mount_w_backup, 'preds', task, target)
-    model_name_short = get_model_name_short(model_name)
-    filename = f'pred_test_{model_name_short}.csv'
-    preds_path = os.path.join(preds_dir, filename)
-
-    # save responses
-    pd.Series(responses).to_csv(preds_path)
+    mean_values = metrics_df.loc['mean'].to_dict()
+    print('Mean:')
+    for k in mean_values:
+        print(f'{k}: {mean_values[k]:.2f}')
